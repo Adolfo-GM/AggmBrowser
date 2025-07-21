@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AggmOS Browser</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #121212;
+      color: #ddd;
+      display: flex;
+      flex-direction: column;
+    }
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+    }
+    #tabs {
+      display: flex;
+      background: #1e1e1e;
+      border-bottom: 1px solid #333;
+      overflow-x: auto;
+      user-select: none;
+    }
+    .tab {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-right: 1px solid #333;
+      cursor: pointer;
+      gap: 6px;
+      white-space: nowrap;
+      color: #bbb;
+      transition: background 0.2s, color 0.2s;
+    }
+    .tab.active {
+      background: #252525;
+      font-weight: bold;
+      color: #58a6ff;
+    }
+    .tab .close {
+      color: #888;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.2s;
+    }
+    .tab .close:hover {
+      color: #ff5c5c;
+    }
+    .tab.add {
+      background: #2a2a2a;
+      font-weight: bold;
+      color: #58a6ff;
+    }
+    #bar {
+      display: flex;
+      padding: 8px;
+      border-bottom: 1px solid #333;
+      background: #1e1e1e;
+    }
+    #bar input {
+      flex: 1;
+      padding: 8px;
+      font-size: 14px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      background: #121212;
+      color: #ddd;
+      caret-color: #58a6ff;
+    }
+    #bar input::placeholder {
+      color: #666;
+    }
+    #bar button {
+      margin-left: 8px;
+      padding: 8px 14px;
+      font-size: 14px;
+      border: none;
+      background: #0078d7;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s;
+    }
+    #bar button:hover {
+      background: #005a9e;
+    }
+    #content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      background: #121212;
+      color: #ddd;
+    }
+    #welcome {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      font-size: 3rem;
+      font-weight: bold;
+      color: #58a6ff;
+      user-select: none;
+      text-align: center;
+      gap: 1rem;
+    }
+    #welcome p {
+      font-size: 1.2rem;
+      color: #aaa;
+      max-width: 400px;
+      margin: 0;
+      font-weight: normal;
+    }
+    .result-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #333;
+      cursor: pointer;
+      transition: background 0.15s;
+      color: #ddd;
+    }
+    .result-item:hover {
+      background: #203040;
+    }
+    .result-title {
+      font-weight: bold;
+      color: #58a6ff;
+      margin-bottom: 6px;
+      text-decoration: underline;
+    }
+    .result-desc {
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="tabs"></div>
+    <div id="bar">
+      <input type="text" id="searchInput" placeholder="Search AgOS..." autocomplete="off" />
+      <button id="goBtn">Go</button>
+    </div>
+    <div id="content"></div>
+  </div>
+<script src="database.js"></script>
+<script>
+  const tabsEl = document.getElementById('tabs');
+  const searchInput = document.getElementById('searchInput');
+  const goBtn = document.getElementById('goBtn');
+  const contentEl = document.getElementById('content');
+  let tabs = JSON.parse(localStorage.getItem('agos-browser-tabs')) || [];
+  let activeTab = 0;
+
+  function saveTabs() {
+    localStorage.setItem('agos-browser-tabs', JSON.stringify(tabs));
+  }
+
+  function renderTabs() {
+    tabsEl.innerHTML = '';
+    tabs.forEach((tab, i) => {
+      const el = document.createElement('div');
+      el.className = 'tab' + (i === activeTab ? ' active' : '');
+      el.innerHTML = `
+        <span>${tab.title}</span>
+        <span class="close" title="Close tab" onclick="closeTab(event, ${i})">×</span>
+      `;
+      el.onclick = (e) => {
+        if (e.target.classList.contains('close')) return;
+        switchTab(i);
+      };
+      tabsEl.appendChild(el);
+    });
+    const addTab = document.createElement('div');
+    addTab.className = 'tab add';
+    addTab.textContent = '+';
+    addTab.onclick = () => createNewTab();
+    tabsEl.appendChild(addTab);
+  }
+
+  function createNewTab() {
+    tabs.push({ title: 'Aggm Browser', query: '', results: null, openedContent: null });
+    activeTab = tabs.length - 1;
+    renderTabs();
+    renderContent();
+    saveTabs();
+    searchInput.value = '';
+    searchInput.focus();
+  }
+
+  function closeTab(e, i) {
+    e.stopPropagation();
+    tabs.splice(i, 1);
+    if (activeTab >= i) activeTab--;
+    if (tabs.length === 0) {
+      createNewTab();
+      activeTab = 0;
+    }
+    renderTabs();
+    renderContent();
+    saveTabs();
+  }
+
+  function switchTab(i) {
+    saveCurrentTab();
+    activeTab = i;
+    renderTabs();
+    renderContent();
+    searchInput.value = tabs[activeTab].query;
+    searchInput.focus();
+  }
+
+  function saveCurrentTab() {
+    if (!tabs[activeTab]) return;
+    tabs[activeTab].query = searchInput.value.trim();
+  }
+
+  function similarityScore(item, query) {
+    const q = query.toLowerCase();
+    const title = item.title.toLowerCase();
+    const desc = item.desc.toLowerCase();
+    let score = 0;
+    if (title.includes(q)) score += 100;
+    if (desc.includes(q)) score += 80;
+    const queryWords = q.split(/\s+/).filter(w => w.length > 1);
+    let wordMatches = 0;
+    queryWords.forEach(word => {
+      if (title.includes(word) || desc.includes(word)) {
+        wordMatches++;
+      }
+    });
+    score += wordMatches * 10;
+    if (title.startsWith(q)) score += 20;
+    return score;
+  }
+
+  function searchDatabase(query) {
+    if (!query) return null;
+    const resultsWithScore = database
+      .map(item => ({
+        item,
+        score: similarityScore(item, query)
+      }))
+      .filter(entry => entry.score > 0)
+      .sort((a, b) => b.score - a.score);
+    const threshold = 80;
+    const exactMatches = resultsWithScore.filter(r => r.score >= threshold).map(r => r.item);
+    const similarMatches = resultsWithScore.filter(r => r.score < threshold).map(r => r.item);
+    return { exactMatches, similarMatches };
+  }
+
+  function attachLinksHandler() {
+    const links = contentEl.querySelectorAll('a');
+    links.forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const queryText = link.textContent.trim();
+        if (!queryText) return;
+        tabs.push({ title: `Search: ${queryText}`, query: queryText, results: null, openedContent: null });
+        activeTab = tabs.length - 1;
+        renderTabs();
+        renderContent();
+        searchInput.value = queryText;
+        searchInput.focus();
+        saveTabs();
+      });
+    });
+  }
+
+  function renderContent() {
+    if (!tabs[activeTab]) {
+      contentEl.innerHTML = '';
+      return;
+    }
+    const tab = tabs[activeTab];
+    if (tab.openedContent) {
+      contentEl.innerHTML = tab.openedContent;
+      attachLinksHandler();
+      return;
+    }
+    if (!tab.query) {
+      contentEl.innerHTML = `
+        <div id="welcome">
+          Aggm Browser
+          <p>A simple and sleek search engine</p>
+        </div>
+      `;
+      tabs[activeTab].title = 'Aggm Browser';
+      saveTabs();
+      renderTabs();
+      return;
+    }
+    const resultsObj = searchDatabase(tab.query);
+    if (!resultsObj || (resultsObj.exactMatches.length === 0 && resultsObj.similarMatches.length === 0)) {
+      contentEl.innerHTML = `<p>No results found for "<strong>${tab.query}</strong>".</p>`;
+      return;
+    }
+    tabs[activeTab].results = resultsObj.exactMatches.concat(resultsObj.similarMatches);
+    tabs[activeTab].title = `Search: ${tab.query}`;
+    saveTabs();
+    renderTabs();
+    let html = '';
+    if (resultsObj.exactMatches.length > 0) {
+      html += `<h3 style="color:#58a6ff; margin-bottom:10px;">Results</h3>`;
+      html += resultsObj.exactMatches.map((r, idx) => `
+        <div class="result-item" data-index="${idx}">
+          <div class="result-title">${r.title}</div>
+          <div class="result-desc">${r.desc}</div>
+        </div>
+      `).join('');
+    }
+    if (resultsObj.similarMatches.length > 0) {
+      html += `<h3 style="color:#888; margin: 20px 0 10px 0; font-style: italic;">Similar results</h3>`;
+      const baseIndex = resultsObj.exactMatches.length;
+      html += resultsObj.similarMatches.map((r, idx) => `
+        <div class="result-item" data-index="${baseIndex + idx}">
+          <div class="result-title">${r.title}</div>
+          <div class="result-desc">${r.desc}</div>
+        </div>
+      `).join('');
+    }
+    contentEl.innerHTML = html;
+    Array.from(contentEl.querySelectorAll('.result-item')).forEach(item => {
+      item.onclick = () => {
+        const idx = parseInt(item.getAttribute('data-index'));
+        const combinedResults = tabs[activeTab].results;
+        openContent(combinedResults[idx].htmlContent, combinedResults[idx].title);
+      };
+    });
+  }
+
+  function openContent(html, title) {
+    tabs[activeTab].openedContent = html;
+    tabs[activeTab].title = title;
+    renderTabs();
+    renderContent();
+    searchInput.value = '';
+  }
+
+  goBtn.onclick = () => {
+    tabs[activeTab].openedContent = null;
+    saveCurrentTab();
+    renderContent();
+  };
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      tabs[activeTab].openedContent = null;
+      saveCurrentTab();
+      renderContent();
+    }
+  });
+
+  if (tabs.length === 0) {
+    createNewTab();
+  } else {
+    renderTabs();
+    renderContent();
+    searchInput.value = tabs[activeTab].query;
+  }
+  searchInput.focus();
+</script>
+
+</body>
+</html>
