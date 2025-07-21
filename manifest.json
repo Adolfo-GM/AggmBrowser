@@ -1,0 +1,16 @@
+{
+    "name": "AGGM Browser",
+    "short_name": "AGGM",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "description": "A sleek and straightforward browser for quick access to web content.",
+    "icons": [
+        {
+            "src": "browser.png",
+            "sizes": "16x16 32x32 48x48 128x128",
+            "type": "image/png"
+        }
+    ]
+}
